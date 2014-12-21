@@ -1,0 +1,103 @@
+INTRODUCTION
+
+	SBRACK implements the Role-based access control design over the inbuilt Discretionary Access Control using Linux Security Module(LSM) hooks to add additional security control over the existing model.
+
+DESCRIPTION
+
+Role-based Access Control(RBAC) Systems is one of the access control approaches used to restrict system access to authorized user in particular roles. The design concentrated on different roles for various user groups and assign privileges to these roles. Depending upon these roles a user will be granted access to different objects.
+
+DESIGN ASSUMPTIONS:
+
+1. RBAC is implemented over the traditional DAC implementation.
+2. Each user can be assigned to only one role. Concept of Active Role can be extrapolated from the present design but has been omitted here for sake of simplicity.
+3. Each role is independent of the other role, inheritance in roles is not present.
+4. Objects are assigned with the labels : Private, Protected, Public. Role assigned to more restrictive one can access object with less restrictive label. e.g. role assigned with Private label can access objects with all Private Protected and Public.
+5. Existing Objects are not mapped with labels. Therefore, SBRACK implementation would not work on these objects.
+6. The RBAC is currently implemented for rmdir operations. The model can be easily extrapolated for remove and create functions on files.
+7. If a user’s entry is not found in the policy storage then he is granted access.
+8. Root is always given access.
+
+
+DESIGN OVERVIEW:
+
+The SBRACK design exploits the LSM security hooks in Linux 3.14.17. Using the File System Storage the security rules for a user performing a particular action can be determined. 
+
+Three terms that will be used during the implementation are:
+
+1. User/Uid : User who is trying to access the system.
+2. Role : Role to which a user belongs. This role will have privileges for user.
+3. Object : File/Directory on which user is trying to perform an operation.
+4. Label : Label tagged to an object with which its accessibility can be confirmed.
+
+LSM hooks for create/delete functions have been overridden to implement the additional functionality. Therefore, e.g. rmdir would call the overridden function before actually performing the rmdir action. The RBAC functionality is implemented in this 
+
+FLOW EXPLANATION:
+
+Admin is given the CLI program to edit these privileges. The functions performed by admin are: 
+	1. Add new role
+	2. Edit existing role
+	3. Delete existing role
+	4. Add user to role
+	5. Remove user from role
+	6. Print Different Lists
+
+Whenever a new directory/file is created and entry corresponding to its inode and role of the owner is saved in the file system(object_label file). This file is then referenced to check permissions for any action any user might perform on the listed inodes.
+
+
+Policy Storage Files:
+
+1. uid_role : Gives the mapping of which user belongs to which role
+2. role_label : Stores the mapping between role and the labels to which that role has access.
+3. object_label : Stores the inode and label mapping of every object.
+
+LSM HOOKS:
+
+1. inode_rmdir (struct inode *dir, struct dentry *dentry) : dentry *dentry represents the dentry for the directory to be deleted. Thus we can get the inode from this and check again the rules to confirm if user is permitted for this action. Return EACCES if not permitted.
+
+2. inode_mkdir (struct inode *dir, struct dentry *dentry, umode_t mode) : inode dir represents the inode for the parent directory in which new directory is being created. Thus we can get the inode no and check the label on it from the policy database and confirm if user role is permitted to do this action. Return EACCES if not permitted.
+
+3. inode_init_security (struct inode *inode, struct inode *dir, const struct qstr *qstr,const char **name, void **value, size_t *len) : This method is called whenever any new file or directory is vein created. In order to maintain the data for object and label mapping it is necessary to save the inode and its access privilege(using the owner role privileges). inode is the inode of the new file/directory that is being created.
+
+4. inode_create (struct inode *dir, struct dentry *dentry, umode_t mode) : inode dir represents the inode for the parent directory in which new file is being created. Thus we can get the inode no and check the label on it from the policy database and confirm if user role is permitted to do this action. Return EACCES if not permitted.
+
+5. inode_unlink (struct inode *dir, struct dentry *dentry) : dentry *dentry represents the dentry for the file to be deleted. Thus we can get the inode from this and check again the rules to confirm if user is permitted for this action. Return EACCES if not permitted.
+
+Other action hooks like creating links ls etc can also be implemented by extrapolating the above method. I have skipped this implementation for the sake of simplicity.
+
+FILES SUBMITTED:
+
+1. Policy Storage Files : 
+	uid_role : Stores mapping between user/uid and role
+	role_label : Stores mapping between role and label
+	object_label : Stores mapping between object and label
+
+2. user_prog.c : User Program to add/delete role and users to the role.
+
+3. sbrack.c : Adds implementation of LSM hooks.
+
+4. sbrack_headers.h : Includes all header files
+
+5. object_label.h : Reads and perform operations related object and label mapping
+
+6. role_label.h : Reads and perform operations related role and label mapping
+
+7. roles.h : Reads and perform operations related user and role mapping
+
+6. Makefile
+
+
+INSTALLATION:
+
+1. Install the 3.14.17 linux
+
+2. Add Makefile and Kconfig in Security folder to the Security folder in the linux kernel
+
+3. Add sbrack folder in the security folder of the linux kernel
+
+4. Select sbrack in make menuconfig in security option
+
+5. Data Files - object_label, uid_role, role_label is to be copy pasted in /etc/
+
+6. Change the mode of Data files - object_label, uid_role, role_label to 777   
+
+7. Compile user_prog.c with cmd gcc user_prog.c
